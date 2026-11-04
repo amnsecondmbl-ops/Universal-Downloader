@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+
+# Binaries & Downloads
+backend/bin/
+backend/downloads/
+*.exe
+
+# Environment variables
+backend/.env
+backend/.env*
+frontend/.env
+frontend/.env*
+
+# Node modules
+frontend/node_modules/
+
+# Build folders
+frontend/build/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Favicon
+favicon/
+favicon
