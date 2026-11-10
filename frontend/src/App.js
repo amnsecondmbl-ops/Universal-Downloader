@@ -776,7 +776,7 @@ return (
           textAlign: "center",
         }}
       >
-        ⚠️ YouTube videos feature is experimental / may fail due to platform restrictions
+        ⚡ Fast & high-quality downloads supported across all platforms
       </p>
     </div>
   </div>

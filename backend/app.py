@@ -244,16 +244,11 @@ def fetch():
         if "Read timed out" in error_message:
             return jsonify({
                 "status": "error",
-                "message": "Server took too long to respond. Try again."
-            }), 500
-        elif "Sign in to confirm" in error_message:
-            return jsonify({
-                "status": "error",
-                "message": "YouTube downloads may occasionally fail due to platform restrictions on cloud servers."
+                "message": "Server took too long to respond. Please try again."
             }), 500
         return jsonify({
             "status": "error",
-            "message": f"Download failed: {error_message}"
+            "message": f"Unable to fetch media: {error_message}"
         }), 500
 
 # Main
