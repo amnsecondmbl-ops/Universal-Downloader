@@ -11,23 +11,23 @@ os.makedirs(BIN_DIR, exist_ok=True)
 
 BASE_URL = os.getenv("BASE_URL", "http://localhost:5000").rstrip("/")
 
-# Ensure ffmpeg.exe exists in backend/bin
-FFMPEG_EXE = os.path.join(BIN_DIR, "ffmpeg.exe")
-if not os.path.exists(FFMPEG_EXE):
-    system_ffmpeg = shutil.which("ffmpeg")
-    if system_ffmpeg:
-        try:
-            shutil.copyfile(system_ffmpeg, FFMPEG_EXE)
-        except Exception:
-            pass
-    if not os.path.exists(FFMPEG_EXE):
-        try:
-            import imageio_ffmpeg
-            src = imageio_ffmpeg.get_ffmpeg_exe()
-            if src and os.path.exists(src):
-                shutil.copyfile(src, FFMPEG_EXE)
-        except Exception:
-            pass
+# Locate FFmpeg binary (Windows, Linux, macOS)
+FFMPEG_PATH = shutil.which("ffmpeg")
+
+if not FFMPEG_PATH:
+    try:
+        import imageio_ffmpeg
+        src = imageio_ffmpeg.get_ffmpeg_exe()
+        if src and os.path.exists(src):
+            bin_name = "ffmpeg.exe" if os.name == "nt" else "ffmpeg"
+            bin_target = os.path.join(BIN_DIR, bin_name)
+            if not os.path.exists(bin_target):
+                shutil.copyfile(src, bin_target)
+                if os.name != "nt":
+                    os.chmod(bin_target, 0o755)
+            FFMPEG_PATH = BIN_DIR
+    except Exception as e:
+        print("Warning locating FFmpeg:", e)
 
 def get_format_for_quality(quality):
     quality = str(quality).lower().strip()
@@ -61,7 +61,7 @@ def download_anything(url, quality="best"):
         "outtmpl": output_template,
         "format": format_str,
         "merge_output_format": "mp3" if is_audio else "mp4",
-        "ffmpeg_location": BIN_DIR if os.path.exists(FFMPEG_EXE) else None,
+        "ffmpeg_location": FFMPEG_PATH,
         "socket_timeout": 60,
         "overwrites": True,
         "windowsfilenames": True,

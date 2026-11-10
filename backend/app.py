@@ -26,6 +26,9 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
+# Start background cleanup loop
+threading.Thread(target=cleanup_loop, daemon=True).start()
+
 DOWNLOADS_FOLDER = os.path.join(BASE_DIR, "downloads")
 os.makedirs(DOWNLOADS_FOLDER, exist_ok=True)
 
@@ -255,9 +258,5 @@ def fetch():
 
 # Main
 if __name__ == "__main__":
-    threading.Thread(
-        target=cleanup_loop,
-        daemon=True
-    ).start()
-
-    app.run(host="0.0.0.0", port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
