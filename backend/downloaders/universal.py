@@ -10,16 +10,17 @@ BIN_DIR = os.path.join(BASE_DIR, "bin")
 os.makedirs(BIN_DIR, exist_ok=True)
 
 BASE_URL = os.getenv("BASE_URL", "http://localhost:5000").rstrip("/")
-
-# Handle cookies for cloud deployments (Render, VPS, etc.)
 COOKIES_FILE = os.path.join(BASE_DIR, "cookies.txt")
-env_cookies = os.getenv("YOUTUBE_COOKIES")
-if env_cookies and not os.path.exists(COOKIES_FILE):
-    try:
-        with open(COOKIES_FILE, "w", encoding="utf-8") as f:
-            f.write(env_cookies.strip())
-    except Exception as e:
-        print("Warning creating cookies.txt from env:", e)
+
+def ensure_cookies():
+    """Extract cookies from environment variable if configured (for Render / cloud)."""
+    env_cookies = os.getenv("YOUTUBE_COOKIES")
+    if env_cookies and not os.path.exists(COOKIES_FILE):
+        try:
+            with open(COOKIES_FILE, "w", encoding="utf-8") as f:
+                f.write(env_cookies.strip())
+        except Exception as e:
+            print("Warning creating cookies.txt from env:", e)
 
 # Locate FFmpeg binary (Windows, Linux, macOS)
 FFMPEG_PATH = shutil.which("ffmpeg")
@@ -56,7 +57,6 @@ def get_format_for_quality(quality):
     elif quality in ("audio", "mp3", "m4a"):
         return "bestaudio/best"
     else:
-        # Default: Absolute highest quality available (4K/2K/1080p)
         return "bestvideo+bestaudio/best"
 
 def _run_ytdlp(url, ydl_opts, actual_folder_name, is_audio, quality):
@@ -104,6 +104,8 @@ def _run_ytdlp(url, ydl_opts, actual_folder_name, is_audio, quality):
 
 def download_anything(url, quality="best"):
     os.makedirs(DOWNLOADS_DIR, exist_ok=True)
+    ensure_cookies()
+
     format_str = get_format_for_quality(quality)
     is_audio = str(quality).lower().strip() in ("audio", "mp3", "m4a")
 
@@ -119,65 +121,50 @@ def download_anything(url, quality="best"):
         "overwrites": True,
         "windowsfilenames": True,
         "noplaylist": True,
+        "quiet": True,
     }
 
-    if os.path.exists(COOKIES_FILE):
+    if os.path.exists(COOKIES_FILE) and os.path.getsize(COOKIES_FILE) > 0:
         base_opts["cookiefile"] = COOKIES_FILE
 
-    # Attempt 1: Standard high-res extraction
+    proxy = os.getenv("PROXY_URL") or os.getenv("HTTP_PROXY")
+    if proxy:
+        base_opts["proxy"] = proxy
+
+    # Tier 1: Try optimal high-resolution extraction
     try:
-        ydl_opts = dict(base_opts)
-        # Extract ID first without downloading to establish folder name
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl_probe:
-            probe_info = ydl_probe.extract_info(url, download=False)
+        ydl_opts_t1 = dict(base_opts)
+        with yt_dlp.YoutubeDL(ydl_opts_t1) as ydl_t1:
+            probe_info = ydl_t1.extract_info(url, download=False)
             actual_folder_name = f"{probe_info.get('id')}_{quality}"
 
-        return _run_ytdlp(url, ydl_opts, actual_folder_name, is_audio, quality)
+        return _run_ytdlp(url, ydl_opts_t1, actual_folder_name, is_audio, quality)
 
-    except Exception as e:
-        err_msg = str(e).lower()
-        print("Attempt 1 encountered issue:", err_msg)
+    except Exception as e1:
+        err_msg = str(e1).lower()
+        print("Tier 1 extraction failed:", err_msg)
 
-        # Check if platform restriction, bot detection, or sign-in restriction occurred
-        if any(keyword in err_msg for keyword in ("sign in", "bot", "confirm", "restricted", "unavailable", "403")):
-            print("Activating cloud-safe fallback extractor...")
+        # If blocked by YouTube bot-check on cloud datacenter IP, activate Tier 2
+        if any(keyword in err_msg for keyword in ("sign in", "bot", "confirm", "403", "forbidden", "restricted")):
+            print("Activating Tier 2 cloud bypass extractor (android client)...")
             try:
-                # Attempt 2: Fallback with mobile/ios player clients
-                opts_tier2 = dict(base_opts)
-                opts_tier2["extractor_args"] = {
+                ydl_opts_t2 = dict(base_opts)
+                ydl_opts_t2["extractor_args"] = {
                     "youtube": {
-                        "player_client": ["android", "ios", "mweb"]
+                        "player_client": ["android"]
                     }
                 }
-                # Allow fallback format if requested high-res format was restricted
-                opts_tier2["format"] = f"{format_str}/bestvideo+bestaudio/best"
+                # Format that android client supports reliably without bot blocks
+                ydl_opts_t2["format"] = "best/18"
 
-                with yt_dlp.YoutubeDL(opts_tier2) as ydl_probe2:
-                    probe_info2 = ydl_probe2.extract_info(url, download=False)
+                with yt_dlp.YoutubeDL(ydl_opts_t2) as ydl_t2:
+                    probe_info2 = ydl_t2.extract_info(url, download=False)
                     actual_folder_name = f"{probe_info2.get('id')}_{quality}"
 
-                return _run_ytdlp(url, opts_tier2, actual_folder_name, is_audio, quality)
+                return _run_ytdlp(url, ydl_opts_t2, actual_folder_name, is_audio, quality)
 
             except Exception as e2:
-                print("Attempt 2 encountered issue:", e2)
-
-                # Attempt 3: Universal fallback (all clients, best available)
-                try:
-                    opts_tier3 = dict(base_opts)
-                    opts_tier3["extractor_args"] = {
-                        "youtube": {
-                            "player_client": ["all"]
-                        }
-                    }
-                    opts_tier3["format"] = "best"
-
-                    with yt_dlp.YoutubeDL(opts_tier3) as ydl_probe3:
-                        probe_info3 = ydl_probe3.extract_info(url, download=False)
-                        actual_folder_name = f"{probe_info3.get('id')}_{quality}"
-
-                    return _run_ytdlp(url, opts_tier3, actual_folder_name, is_audio, quality)
-
-                except Exception as e3:
-                    raise e3
+                print("Tier 2 extraction failed:", e2)
+                raise e2
         else:
-            raise e
+            raise e1
